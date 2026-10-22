@@ -1,0 +1,1174 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PCA vía SVD</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<style>
+:root {
+  --ink: rgba(0,0,0,.8); --ink2: rgba(0,0,0,.6); --ink3: rgba(0,0,0,.42); --rule: rgba(0,0,0,.1);
+  --shade: hsl(200,20%,97%); --plot: rgb(252,252,252);
+  --mag: #c51b8a; --pink: #fa9fb5; --amb: rgb(245,181,62); --ambD: #a86b00;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: Menlo, Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+#progress { position: fixed; top: 0; left: 0; height: 2px; width: 0; background: var(--mag); transition: width .35s; z-index: 10; }
+
+/* ---------- escenario 1280×720 escalado ---------- */
+.slide { position: absolute; left: 50%; top: 50%; width: 1280px; height: 720px; padding: 40px 72px 52px; display: flex; flex-direction: column; background: #fff; overflow: hidden;
+  transform: translate(-50%, -50%) scale(var(--s, 1)); opacity: 0; visibility: hidden; transition: opacity .35s, visibility .35s; }
+.slide.active { opacity: 1; visibility: visible; }
+.foot { position: absolute; left: 72px; right: 72px; bottom: 14px; display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--ink3); letter-spacing: .02em; }
+.foot .nav { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.foot button { all: unset; cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 6px; color: var(--ink3); }
+.foot button:hover { color: var(--mag); }
+
+/* ---------- tipografía Distill ---------- */
+.kicker { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink3); margin-bottom: 8px; }
+.kicker b { color: var(--mag); font-weight: 600; margin-right: 8px; }
+h2 { font-size: 30px; font-weight: 600; line-height: 1.2; margin: 0 0 18px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); color: rgba(0,0,0,.85); }
+h2 code { font-family: var(--mono); font-size: .9em; font-weight: 600; }
+.subhead { font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: rgba(0,0,0,.5); margin: 0 0 8px; }
+.note-sm { font-size: 13px; line-height: 1.5; color: var(--ink2); margin: 0; }
+.muted { color: var(--ink3); }
+.hint { color: var(--ink3); font-style: italic; }
+code.inl, figcaption code, .note-sm code { font-family: var(--mono); font-size: .92em; background: rgba(0,0,0,.04); border-radius: 2px; padding: 1px 5px; }
+
+/* ---------- layout ---------- */
+.two { flex: 1; min-height: 0; display: grid; grid-template-columns: 430px 1fr; column-gap: 40px; }
+.two.code-steps { grid-template-columns: 1fr 300px; align-items: start; }
+.two.rev { grid-template-columns: 1fr 340px; }
+.col { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+.fig { margin: 0 -72px 0 0; padding: 14px 72px 12px 24px; background: var(--shade); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.fig.left { margin: 0 0 0 -72px; padding: 12px 24px 12px 72px; }
+.plot-area { flex: 1; min-height: 0; position: relative; }
+.plot-area > svg { display: block; position: absolute; left: 0; top: 0; overflow: visible; }
+figcaption { font-size: 13px; line-height: 1.5; color: var(--ink2); margin-top: 8px; }
+figcaption b { color: var(--ink); font-weight: 600; }
+.controls { display: flex; align-items: center; gap: 16px; min-height: 28px; margin-bottom: 8px; font-size: 12px; color: var(--ink2); flex-wrap: wrap; }
+
+/* ---------- controles ---------- */
+.seg { display: inline-flex; border: 1px solid rgba(0,0,0,.15); border-radius: 3px; overflow: hidden; background: rgba(255,255,255,.5); }
+.seg button { all: unset; cursor: pointer; padding: 5px 12px; font-size: 12px; color: var(--ink2); font-family: var(--sans); }
+.seg button + button { border-left: 1px solid rgba(0,0,0,.15); }
+.seg button:hover { color: var(--ink); }
+.seg button.on { background: #fff; color: rgba(0,0,0,.88); box-shadow: inset 0 -2px 0 var(--mag); }
+.lg { display: inline-flex; align-items: center; gap: 6px; }
+.lg i { display: inline-block; flex: none; }
+.d-eu { width: 8px; height: 8px; border-radius: 50%; background: rgba(0,0,0,.5); }
+.d-nu { width: 10px; height: 10px; border-radius: 50%; background: var(--amb); box-shadow: inset 0 0 0 1.2px var(--ambD); }
+.d-ar { width: 18px; height: 2px; background: var(--mag); }
+.d-bar { width: 10px; height: 10px; background: var(--mag); }
+.d-cum { width: 18px; height: 2px; background: rgba(0,0,0,.6); }
+.d-ghost { width: 10px; height: 10px; border: 1px dashed rgba(0,0,0,.45); }
+.grad { display: inline-block; width: 90px; height: 8px; vertical-align: middle; border-radius: 1px; background: linear-gradient(90deg, #a86b00, rgb(245,181,62), #f3f3f3, #fa9fb5, #c51b8a); }
+label.q { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-style: italic; color: var(--ink); }
+input[type=range] { accent-color: var(--mag); width: 170px; }
+.readout { font-size: 13px; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.readout b { color: var(--mag); }
+
+/* ---------- código (d-code) ---------- */
+pre.code { margin: 0; font-family: var(--mono); font-size: 13px; line-height: 1.6; color: rgba(0,0,0,.72); border-left: 2px solid var(--rule); padding: 0 0 0 18px; white-space: pre; overflow: hidden; }
+pre.code.big { font-size: 14.5px; line-height: 1.75; }
+pre.code.sm { font-size: 12.5px; }
+pre.code .ln { display: block; padding-right: 8px; transition: opacity .2s, background-color .2s; }
+pre.code.focus .ln { opacity: .28; }
+pre.code.focus .ln.on { opacity: 1; background: rgba(197,27,138,.07); }
+.token.comment { color: slategray; font-style: italic; }
+.token.punctuation { color: #999; }
+.token.number, .token.boolean, .token.constant { color: #905; }
+.token.string, .token.builtin, .token.string-interpolation { color: #690; }
+.token.operator { color: #9a6e3a; }
+.token.keyword { color: #07a; }
+.token.function, .token.class-name { color: #DD4A68; }
+
+/* ---------- portada ---------- */
+.s-title { padding-top: 0; }
+.teaser { margin: 0 -72px; height: 290px; flex: none; background: var(--shade); border-bottom: 1px solid var(--rule); position: relative; display: flex; justify-content: center; padding: 14px 0 10px; }
+.teaser .plot-area { width: 620px; flex: none; }
+.teaser .tcap { position: absolute; right: 72px; bottom: 10px; font-size: 12px; color: var(--ink3); max-width: 200px; text-align: right; line-height: 1.4; }
+.s-title h1 { font-size: 54px; font-weight: 700; line-height: 1.1; margin: 34px 0 12px; letter-spacing: -.01em; color: rgba(0,0,0,.88); }
+.s-title .sub { font-size: 20px; font-weight: 300; line-height: 1.5; margin: 0 0 26px; max-width: 900px; }
+.byline { display: grid; grid-template-columns: 1.2fr 1.4fr 1fr 1fr; gap: 24px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 14px 0; }
+.byline h3 { font-size: 10px; font-weight: 400; letter-spacing: .07em; text-transform: uppercase; color: rgba(0,0,0,.5); margin: 0 0 6px; }
+.byline p { font-size: 13px; line-height: 1.6; margin: 0; }
+
+/* ---------- piezas por slide ---------- */
+.gloss { margin: 0; display: grid; gap: 3px; font-size: 13px; }
+.gloss div { display: grid; grid-template-columns: 112px 1fr; }
+.gloss dt { font-weight: 600; }
+.gloss dd { margin: 0; color: var(--ink2); }
+.math { justify-content: center; gap: 0; }
+.math .katex-display { margin: 6px 0 2px; text-align: left; }
+.math .katex-display > .katex { text-align: left; font-size: 1.45em; }
+.mnote { margin: 0 0 16px; font-size: 13px; color: var(--ink2); }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.steps li { display: grid; grid-template-columns: 30px 1fr; gap: 8px; align-items: start; padding: 10px 12px; border-left: 2px solid transparent; cursor: pointer; transition: background .2s, border-color .2s; }
+.steps li:hover, .steps li.on { background: var(--shade); border-left-color: var(--mag); }
+.steps .n { width: 22px; height: 22px; border-radius: 50%; background: var(--mag); color: #fff; font-size: 12px; font-weight: 600; display: grid; place-items: center; }
+.steps b { display: block; font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+.steps .katex { font-size: 1.05em; color: var(--ink2); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font-size: 12px; padding: 4px 8px; border: 1px solid rgba(0,0,0,.15); border-radius: 3px; color: var(--ink2); font-variant-numeric: tabular-nums; }
+.chip.flip { border-color: var(--mag); color: var(--mag); background: rgba(197,27,138,.06); font-weight: 600; }
+table.tbl { border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; width: 100%; }
+.tbl th { font-weight: 600; color: var(--ink2); text-align: right; padding: 0 4px 6px; border-bottom: 1px solid var(--rule); line-height: 1.25; }
+.tbl th:first-child, .tbl td:first-child { text-align: left; padding-left: 0; }
+.tbl td { text-align: right; padding: 4px 4px; border-bottom: 1px solid rgba(0,0,0,.05); white-space: nowrap; }
+.tbl td.out { color: var(--ambD); font-weight: 700; }
+.tbl td.rng { color: var(--ink3); }
+#code-rec { min-height: 205px; }
+#cap-rec { height: 60px; }
+.info { min-height: 200px; }
+.info .pname { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.info .pname.nuevo { color: var(--ambD); }
+.info table { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.info td { padding: 2px 16px 2px 0; }
+.info td + td { text-align: right; padding-right: 0; }
+.takeaways { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 28px; max-width: 1000px; }
+.takeaways li { display: grid; grid-template-columns: 48px 1fr; align-items: baseline; font-size: 23px; line-height: 1.45; font-weight: 300; }
+.takeaways .n { font-weight: 600; color: var(--mag); }
+.takeaways b { font-weight: 600; }
+
+.idea-area { display: flex; align-items: center; }
+.idea-box { padding: 0 8px; }
+.idea-box .katex-display { margin: 4px 0; text-align: left; }
+.idea-box .katex-display > .katex { text-align: left; font-size: 1.3em; }
+.scroll-area { overflow: hidden; }
+.head-tbl { font-size: 12px; }
+.head-tbl td, .head-tbl th { padding-left: 8px; padding-right: 8px; }
+.two.rec { grid-template-columns: 360px 1fr; }
+.pair { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.pair-col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.ptitle { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--ink); }
+
+/* ---------- SVG ---------- */
+svg text { font-family: var(--sans); }
+.plot { fill: var(--plot); stroke: rgba(0,0,0,.1); }
+.axis text { fill: rgba(0,0,0,.6); font-size: 11px; }
+.axis path, .axis line { stroke: rgba(0,0,0,.3); }
+.axlab, .colhead { fill: rgba(0,0,0,.6); font-size: 12px; }
+.zero { stroke: rgba(0,0,0,.22); stroke-dasharray: 3 3; }
+.grid line { stroke: rgba(0,0,0,.07); }
+.arr { stroke: var(--mag); stroke-width: 1.6px; }
+.arr.on { stroke-width: 2.8px; }
+.feat { fill: var(--mag); font-size: 12px; font-weight: 600; text-anchor: middle; dominant-baseline: central; paint-order: stroke; stroke: var(--plot); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.feat.hov { pointer-events: all; cursor: pointer; }
+.pt { fill: rgba(0,0,0,.5); stroke: #fff; stroke-width: 1px; }
+.pt.nuevo { fill: var(--amb); stroke: var(--ambD); stroke-width: 1.2px; }
+.pt.hi, .spt.hi { fill: var(--mag); stroke: #fff; }
+.colored .pt:not(.nuevo) { stroke: rgba(0,0,0,.35); }
+.dim { opacity: .18; }
+.fade { opacity: .3; }
+.lbl { fill: rgba(0,0,0,.6); font-size: 10.5px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.lbl.nuevo { fill: var(--ambD); font-size: 12px; font-weight: 600; }
+.lbl.hi { fill: #000; font-weight: 600; }
+.lead { stroke: rgba(0,0,0,.25); stroke-width: .8px; }
+.edge path { fill: var(--amb); stroke: var(--ambD); }
+.edge text { fill: var(--ambD); font-size: 12px; font-weight: 600; paint-order: stroke; stroke: var(--plot); stroke-width: 3px; }
+.hovername, .hovername2, .infot { font-size: 13px; font-weight: 600; fill: #000; pointer-events: none; }
+.hovername { text-anchor: middle; paint-order: stroke; stroke: rgba(252,252,252,.9); stroke-width: 3px; }
+.rowline { stroke: rgba(0,0,0,.08); }
+.rowlab { fill: var(--ink); font-size: 12.5px; }
+.share { fill: var(--ink2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.share.big { fill: var(--mag); font-weight: 600; }
+.range { fill: rgba(0,0,0,.06); }
+.bar { fill: var(--mag); }
+.bar.lo { fill: var(--pink); }
+.bar.amb { fill: var(--amb); }
+.readout-svg { font-size: 12px; fill: var(--ink); font-variant-numeric: tabular-nums; }
+.cumline { fill: none; stroke: rgba(0,0,0,.6); stroke-width: 1.5px; }
+.cumdot { fill: #fff; stroke: rgba(0,0,0,.6); stroke-width: 1.5px; }
+.vlab, .cumlab { font-size: 11px; fill: var(--ink2); text-anchor: middle; font-variant-numeric: tabular-nums; }
+.vlab.in { fill: #fff; font-weight: 600; }
+.cumlab { fill: rgba(0,0,0,.75); }
+.ghost { fill: none; stroke: rgba(0,0,0,.45); stroke-dasharray: 3 2; }
+.base { stroke: rgba(0,0,0,.3); }
+.cell { shape-rendering: crispEdges; }
+.mframe { fill: none; stroke: rgba(0,0,0,.25); }
+.sv { fill: var(--mag); }
+.qbox { fill: none; stroke: var(--mag); stroke-width: 2px; }
+.mat-sym { font-size: 24px; fill: var(--ink2); text-anchor: middle; dominant-baseline: central; }
+.mat-name { font-family: KaTeX_Math, Georgia, serif; font-style: italic; font-size: 20px; fill: var(--ink); text-anchor: middle; }
+.mat-dim { font-size: 11px; fill: var(--ink3); text-anchor: middle; }
+.colt { font-size: 10.5px; fill: var(--ink2); text-anchor: middle; }
+.rowt { font-size: 12px; fill: var(--ink2); text-anchor: end; dominant-baseline: central; }
+.colt.on, .rowt.on { fill: #000; font-weight: 600; }
+.vt { font-size: 11px; fill: var(--ink2); dominant-baseline: central; font-variant-numeric: tabular-nums; }
+.cell-t { font-size: 12px; text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums; pointer-events: none; }
+.annot { fill: var(--ambD); font-size: 11.5px; font-weight: 600; paint-order: stroke; stroke: var(--plot); stroke-width: 3px; }
+.diagmark { stroke: var(--mag); stroke-width: 1.5px; }
+.hbar { fill: rgba(0,0,0,.28); }
+.hbar.nuevo { fill: var(--amb); }
+.spt { fill: rgba(0,0,0,.45); }
+.spt.nuevo { fill: var(--amb); stroke: var(--ambD); stroke-width: 1px; }
+.slab { font-size: 11.5px; fill: var(--ink); }
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<main id="deck">
+
+<!-- ============ Portada ============ -->
+<section class="slide s-title" id="s-portada">
+  <div class="teaser">
+    <div class="plot-area" id="fig-teaser"></div>
+    <div class="tcap">28 países de Europa proyectados en las dos primeras componentes principales</div>
+  </div>
+  <h1>Implementación PCA</h1>
+  <p class="sub">Componentes principales a partir de la SVD, comparación con scikit-learn e incorporación de países nuevos a <code class="inl">europe.csv</code>.</p>
+  <div class="byline">
+    <div><h3>Grupo 2</h3><p>Leandro Escudero<br>Julián Fraga<br>Javier Spina</p></div>
+    <div><h3>Materia</h3><p>Aprendizaje Automático<br>Licenciatura en Ciencia de Datos</p></div>
+    <div><h3>Institución</h3><p>ECyT · UNSAM</p></div>
+    <div><h3>Fecha</h3><p>Octubre 2026</p></div>
+  </div>
+</section>
+
+<!-- ============ Actividad 1 ============ -->
+<section class="slide" id="s-idea">
+  <header><div class="kicker"><b>Actividad 1</b>La idea</div><h2>Promedio + detalle</h2></header>
+  <div class="two">
+    <div class="col math">
+      <div data-tex="x_i = \bar x + \sum_{j=1}^{q} \lambda_{ij}\, v_j" data-display></div>
+      <p class="mnote">Cada observación se aproxima como <i>promedio + detalle</i>; el detalle es más o menos granular según cuántas componentes <i>q</i> se tomen.</p>
+      <div data-tex="X = U D V^T, \qquad \lambda_{ij} = U_{ij}\, d_j" data-display></div>
+      <p class="mnote">Las direcciones <span data-tex="v_j"></span> salen de la SVD de la matriz de observaciones, quedándose con las primeras <i>q</i> columnas.</p>
+    </div>
+    <figure class="fig">
+      <div class="plot-area idea-area">
+        <div class="idea-box">
+          <p class="subhead">Por qué capturan la mayor varianza</p>
+          <div data-tex="X^T X = V D^2 V^T" data-display></div>
+          <div data-tex="d_1 \ge d_2 \ge \dots \ge d_N" data-display></div>
+          <p class="mnote"><span data-tex="v_1"></span> tiene asociada la varianza <span data-tex="d_1^2"></span>, mayor a todas las demás; <span data-tex="v_2"></span> tiene <span data-tex="d_2^2"></span>, la mayor entre las direcciones ortogonales a <span data-tex="v_1"></span>, y así.</p>
+          <p class="subhead" style="margin-top:22px">Ejemplo: caras</p>
+          <div data-tex="\text{cara}_i = \text{cara promedio} + \lambda_{i1}\,\text{rasgo}_1 + \lambda_{i2}\,\text{rasgo}_2 + \dots" data-display></div>
+        </div>
+      </div>
+      <figcaption>Resumen de la sección 14.5.1 de <i>The Elements of Statistical Learning</i> (<code>actividad_1.ipynb</code>).</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ Actividad 2 ============ -->
+<section class="slide" id="s-impl">
+  <header><div class="kicker"><b>Actividad 2</b>Implementación</div><h2><code>pca_svd</code>: componentes principales vía SVD</h2></header>
+  <div class="two code-steps">
+    <pre class="code big" id="code-pca" data-src="py-pca"></pre>
+    <div class="col">
+      <ol class="steps" id="steps">
+        <li data-l="1-3"><span class="n">1</span><div><b>Centrar X</b><span data-tex="X - \bar x"></span></div></li>
+        <li data-l="5"><span class="n">2</span><div><b>Hacer SVD</b><span data-tex="U,\ d,\ V^T"></span></div></li>
+        <li data-l="7-9"><span class="n">3</span><div><b>Varianza explicada</b><span data-tex="\sigma^2 = d^2/(N-1)"></span></div></li>
+        <li data-l="11-15"><span class="n">4</span><div><b>Truncar matrices</b><span data-tex="U_q,\ D_q,\ V_q^T"></span></div></li>
+        <li data-l="17-19"><span class="n">5</span><div><b>Proyectar y devolver</b><span data-tex="\lambda = U_q D_q"></span></div></li>
+      </ol>
+      <p class="note-sm">Devuelve <span data-tex="X_{proyectado}"></span> en <i>q</i> componentes, <span data-tex="V_q^T"></span> y la varianza explicada por componente.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Actividad 3 · datos ============ -->
+<section class="slide" id="s-datos">
+  <header><div class="kicker"><b>Actividad 3</b>Datos</div><h2><code>europe.csv</code>: 28 países, 7 variables</h2></header>
+  <div class="two">
+    <div class="col">
+      <pre class="code" data-src="py-datos"></pre>
+      <p class="note-sm">Escalamos el dataframe con <code>StandardScaler</code> por comodidad.</p>
+    </div>
+    <figure class="fig">
+      <div class="plot-area scroll-area">
+        <p class="subhead" style="text-transform:none"><code class="inl">df.head()</code></p>
+        <table class="tbl head-tbl" id="tbl-head"></table>
+        <p class="subhead" style="margin-top:26px">Variables</p>
+        <dl class="gloss">
+          <div><dt>Area</dt><dd>área del país</dd></div>
+          <div><dt>GDP</dt><dd>producto bruto interno</dd></div>
+          <div><dt>Inflation</dt><dd>tasa de inflación anual</dd></div>
+          <div><dt>Life.expect</dt><dd>esperanza de vida media, en años</dd></div>
+          <div><dt>Military</dt><dd>presupuesto militar</dd></div>
+          <div><dt>Pop.growth</dt><dd>tasa de crecimiento poblacional</dd></div>
+          <div><dt>Unemployment</dt><dd>tasa de desempleo</dd></div>
+        </dl>
+      </div>
+      <figcaption>Primeras filas del dataset y descripción de las variables según la guía.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ Actividad 3 · varianza ============ -->
+<section class="slide" id="s-var">
+  <header><div class="kicker"><b>Actividad 3</b>Varianza explicada</div><h2>Varianza explicada por componente</h2></header>
+  <div class="two">
+    <div class="col"><pre class="code" data-src="py-var"></pre></div>
+    <figure class="fig">
+      <div class="plot-area" id="fig-var"></div>
+      <figcaption>Izquierda: fracción de varianza explicada por cada componente. Derecha: fracción acumulada. Pasá el mouse por una barra para ver el valor.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ Actividad 3 · componentes ============ -->
+<section class="slide" id="s-comp">
+  <header><div class="kicker"><b>Actividad 3</b>Componentes</div><h2>Composición de las componentes</h2></header>
+  <div class="two">
+    <div class="col"><pre class="code" data-src="py-comp"></pre></div>
+    <figure class="fig">
+      <div class="controls"><span class="lg">carga: −1 <span class="grad"></span> +1</span></div>
+      <div class="plot-area" id="fig-heat"></div>
+      <figcaption>Composición de las componentes en función de las features originales (filas de <span data-tex="V^T"></span>, <code>componentes_df</code>).</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ Actividad 3 · biplot ============ -->
+<section class="slide" id="s-biplot">
+  <header><div class="kicker"><b>Actividad 3</b>Biplot</div><h2>Proyección de features en el espacio de componentes principales</h2></header>
+  <div class="two">
+    <div class="col"><pre class="code" data-src="py-biplot"></pre></div>
+    <figure class="fig">
+      <div class="controls">
+        <span class="lg"><i class="d-eu"></i>país</span>
+        <span class="lg"><i class="d-ar"></i>feature (× 5)</span>
+        <span class="hint" id="hint-biplot">pasá el mouse por una feature para colorear los países por su valor</span>
+        <span class="lg" id="lg-color" hidden></span>
+      </div>
+      <div class="plot-area" id="fig-biplot"></div>
+      <figcaption>Países: <code>X_proyectado[:, 0]</code> y <code>X_proyectado[:, 1]</code>. Flechas: primera y segunda fila de <code>componentes</code>, escaladas × 5.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ Actividad 3 · sklearn varianza ============ -->
+<section class="slide" id="s-skvar">
+  <header><div class="kicker"><b>Actividad 3</b>scikit-learn</div><h2>Repito análisis con la implementación de sklearn</h2></header>
+  <div class="two">
+    <div class="col">
+      <pre class="code" data-src="py-sk"></pre>
+      <div>
+        <p class="subhead">Comparación de componentes principales</p>
+        <div class="chips" id="chips"></div>
+        <p class="note-sm" style="margin-top:10px">Mismos valores absolutos; las marcadas tienen el sentido invertido.</p>
+      </div>
+    </div>
+    <figure class="fig">
+      <div class="controls">
+        <span class="lg"><i class="d-bar"></i>implementación propia</span>
+        <span class="lg"><i class="d-bar" style="background:var(--amb)"></i>sklearn</span>
+      </div>
+      <div class="plot-area" id="fig-skvar"></div>
+      <figcaption>Varianza explicada individual y acumulada: las dos implementaciones dan los mismos valores.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ Actividad 3 · sklearn biplot ============ -->
+<section class="slide" id="s-skbi">
+  <header><div class="kicker"><b>Actividad 3</b>scikit-learn</div><h2>sklearn invierte el sentido de algunas componentes</h2></header>
+  <div class="two">
+    <div class="col">
+      <pre class="code" data-src="py-skbi"></pre>
+    </div>
+    <figure class="fig">
+      <div class="controls">
+        <div class="seg" id="seg-sk"><button data-v="propia">Implementación propia</button><button data-v="sklearn">sklearn</button></div>
+      </div>
+      <div class="plot-area" id="fig-sk"></div>
+      <figcaption>La inversión de sentido de la componente 2 se observa como un reflejo del gráfico entre ambas versiones.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ Actividad 4 · Argentina 2012 ============ -->
+<section class="slide" id="s-ar">
+  <header><div class="kicker"><b>Actividad 4</b>Otro país</div><h2>Primer dato agregado: Argentina 2012</h2></header>
+  <div class="two">
+    <div class="col">
+      <pre class="code sm" data-src="py-ar"></pre>
+      <p class="note-sm">Agregamos cuatro filas: Argentina y Brasil, de 2012 y de 2024. Las introducimos de a una para observar cómo cada nuevo dato cambia los resultados. La primera es Argentina 2012, el año de las mediciones originales.</p>
+    </div>
+    <figure class="fig">
+      <div class="controls">
+        <span class="lg"><i class="d-eu"></i>Europa</span>
+        <span class="lg"><i class="d-nu"></i>Argentina 2012</span>
+        <span class="lg"><i class="d-ar"></i>feature (× 5)</span>
+      </div>
+      <div class="plot-area" id="fig-ar"></div>
+      <figcaption>PCA recalculado (<code>pca_svd</code>) con Argentina 2012 incluida: proyección de las features en el espacio de componentes.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ Actividad 4 · proyección ============ -->
+<section class="slide" id="s-proy">
+  <header><div class="kicker"><b>Actividad 4</b>Proyección</div><h2>Países nuevos sobre las componentes originales</h2></header>
+  <div class="two">
+    <div class="col">
+      <pre class="code sm" data-src="py-proy"></pre>
+      <p class="note-sm">Proyectamos los países nuevos sobre las componentes calculadas con los datos originales, sin recalcular el PCA: mismo <code>StandardScaler</code> ajustado sobre <code>europe.csv</code> y <code>pca.transform</code>.</p>
+      <table class="tbl" id="tbl-nuevos"></table>
+    </div>
+    <figure class="fig">
+      <div class="controls">
+        <div class="seg" id="seg-proy"><button data-v="completa">Vista completa</button><button data-v="zoom">Zoom en Europa</button></div>
+        <span class="lg"><i class="d-eu"></i>Europa</span>
+        <span class="lg"><i class="d-nu"></i>países nuevos</span>
+      </div>
+      <div class="plot-area" id="fig-proy"></div>
+      <figcaption>Proyección de países nuevos sobre las componentes principales originales (sklearn).</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ Actividad 4 · lado a lado ============ -->
+<section class="slide" id="s-lado">
+  <header><div class="kicker"><b>Actividad 4</b>Recalcular</div><h2>Proyectar sobre el PCA original vs. recalcular</h2></header>
+  <div class="two rec">
+    <div class="col">
+      <pre class="code sm" data-src="py-rec"></pre>
+      <p class="note-sm">Recalculamos el PCA incluyendo los cuatro países nuevos; el escalado también se ajusta sobre el conjunto completo.</p>
+    </div>
+    <figure class="fig">
+      <div class="controls">
+        <span class="lg"><i class="d-eu"></i>Europa (datos originales)</span>
+        <span class="lg"><i class="d-nu"></i>países nuevos</span>
+        <span class="lg"><i class="d-ar"></i>feature (× 5)</span>
+      </div>
+      <div class="pair">
+        <div class="pair-col"><p class="ptitle">Proyectados sobre el PCA original (sin recalcular)</p><div class="plot-area" id="fig-l"></div></div>
+        <div class="pair-col"><p class="ptitle">PCA recalculado con todos los países</p><div class="plot-area" id="fig-r"></div></div>
+      </div>
+      <figcaption>Comparación lado a lado. Pasá el mouse por un punto para ver el país.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ Actividad 4 · SPLOM ============ -->
+<section class="slide" id="s-splom">
+  <header><div class="kicker"><b>Actividad 4</b>SPLOM</div><h2>SPLOM de las variables originales</h2></header>
+  <div class="two rev">
+    <figure class="fig left">
+      <div class="plot-area" id="fig-splom"></div>
+    </figure>
+    <div class="col">
+      <pre class="code sm" data-src="py-splom"></pre>
+      <div class="controls" style="margin:0">
+        <span class="lg"><i class="d-eu"></i>Europa</span>
+        <span class="lg"><i class="d-nu"></i>países nuevos</span>
+      </div>
+      <div class="info" id="splom-info"></div>
+      <p class="note-sm">Todos los países, con histogramas en la diagonal.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ código del notebook ============ -->
+<script type="text/x-python" id="py-pca">
+def pca_svd(X:ndarray, n_componentes:int|None=None):
+    X_bar = np.mean(X, axis=0)
+    X_centrado = X - X_bar
+    N = X.shape[0]
+
+    U, d, Vt = np.linalg.svd(X_centrado, full_matrices=False)
+
+    sigma_cuad = (d ** 2) / (N - 1)
+    var_total = np.sum(sigma_cuad)
+    varianza_explicada_ratio = sigma_cuad / var_total
+
+    if n_componentes is None:
+        n_componentes = X.shape[1]
+    U_q = U[:, :n_componentes]
+    D_q = np.diag(d[:n_componentes])
+    Vt_q = Vt[:n_componentes, :]
+
+    X_proyectado = np.dot(U_q, D_q)  # = X_centrado @ Vt_q.T
+
+    return X_proyectado, Vt_q, varianza_explicada_ratio[:n_componentes]
+</script>
+<script type="text/x-python" id="py-datos">
+df = pd.read_csv('./europe.csv', delimiter=',')
+
+id = 'Country'
+features = list(set(df.columns) - {id})
+X = df[features].to_numpy()
+
+std_scale = StandardScaler()
+std_scale.fit(X)
+X_scaled = std_scale.transform(X)
+</script>
+<script type="text/x-python" id="py-var">
+X_proyectado, componentes, varianza_explicada = \
+    pca_svd(X_scaled)
+
+n_componentes = range(1, len(varianza_explicada) + 1)
+varianza_acumulada = np.cumsum(varianza_explicada)
+
+ax[0].bar(n_componentes, varianza_explicada)
+ax[1].bar(n_componentes, varianza_acumulada,
+          color='tomato')
+</script>
+<script type="text/x-python" id="py-comp">
+componentes_df = pd.DataFrame(
+    [[round(float(a), 3) for a in componentes[i]]
+     for i in range(len(componentes))],
+    columns=features,
+    index=[f'Comp. Principal {i}'
+           for i in range(1, len(componentes) + 1)]
+)
+</script>
+<script type="text/x-python" id="py-biplot">
+escala = 5
+for i in range(len(features)):
+    ax.arrow(0, 0,
+             escala * componentes[0][i],
+             escala * componentes[1][i],
+             width=0.05, color='r', alpha=0.65)
+    ax.text(escala * componentes[0][i],
+            escala * componentes[1][i],
+            s=features[i])
+
+ax.scatter(X_proyectado[:, 0], X_proyectado[:, 1])
+</script>
+<script type="text/x-python" id="py-sk">
+from sklearn.decomposition import PCA
+
+pca = PCA(n_components=None)
+pca.fit(X_scaled)
+X_proyectado_sklearn = pca.transform(X_scaled)
+varianza_explicada_sklearn = \
+    pca.explained_variance_ratio_
+componentes_sklearn = pca.components_
+</script>
+<script type="text/x-python" id="py-skbi">
+for i in range(len(features)):
+    ax.arrow(0, 0,
+             escala * componentes_sklearn[0][i],
+             escala * componentes_sklearn[1][i])
+
+ax.scatter(X_proyectado_sklearn[:, 0],
+           X_proyectado_sklearn[:, 1])
+</script>
+<script type="text/x-python" id="py-ar">
+df_expandido = pd.read_csv('./dataset_expandido.csv')
+
+X_expandido = df_expandido[features].to_numpy()
+std_scaler_2 = StandardScaler()
+std_scaler_2.fit(X_expandido)
+X_scaled_expandido = std_scaler_2.transform(
+    X_expandido)
+
+(X_proyectado_expandido, componentes_expandido,
+ varianza_explicada_expandido) = \
+    pca_svd(X_scaled_expandido)
+</script>
+<script type="text/x-python" id="py-proy">
+df_mas_expandido = pd.read_csv(
+    './dataset_mas_expandido.csv')
+df_nuevos = df_mas_expandido[
+    ~df_mas_expandido[id].isin(df[id])
+].reset_index(drop=True)
+
+X_nuevos_scaled = std_scale.transform(
+    df_nuevos[features].to_numpy())
+X_nuevos_proyectado = pca.transform(X_nuevos_scaled)
+</script>
+<script type="text/x-python" id="py-rec">
+X_todos = df_mas_expandido[features].to_numpy()
+std_scaler_todos = StandardScaler()
+std_scaler_todos.fit(X_todos)
+X_scaled_todos = std_scaler_todos.transform(
+    X_todos)
+
+pca_todos = PCA(n_components=None)
+pca_todos.fit(X_scaled_todos)
+X_proyectado_todos = pca_todos.transform(
+    X_scaled_todos)
+componentes_todos = pca_todos.components_
+</script>
+<script type="text/x-python" id="py-splom">
+colores = np.where(es_nuevo_todos,
+                   'tab:green', 'tab:blue')
+pd.plotting.scatter_matrix(
+    df_mas_expandido[features],
+    diagonal='hist', c=colores,
+    hist_kwds={'bins': 15})
+</script>
+
+<script>window.Prism = { manual: true };</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script>
+(() => {
+'use strict';
+const D = {"features":["Pop.growth","Area","Unemployment","Life.expect","Military","GDP","Inflation"],"europe":{"countries":["Austria","Belgium","Bulgaria","Croatia","Czech Republic","Denmark","Estonia","Finland","Germany","Greece","Hungary","Iceland","Ireland","Italy","Latvia","Lithuania","Luxembourg","Netherlands","Norway","Poland","Portugal","Slovakia","Slovenia","Spain","Sweden","Switzerland","Ukraine","United Kingdom"],"raw":[[0.03,83871.0,4.2,79.91,0.8,41600.0,3.5],[0.06,30528.0,7.2,79.65,1.3,37800.0,3.5],[-0.8,110879.0,9.6,73.84,2.6,13800.0,4.2],[-0.09,56594.0,17.7,75.99,2.39,18000.0,2.3],[-0.13,78867.0,8.5,77.38,1.15,27100.0,1.9],[0.24,43094.0,6.1,78.78,1.3,37000.0,2.8],[-0.65,45228.0,12.5,73.58,2.0,20400.0,5.0],[0.07,338145.0,7.8,79.41,2.0,36000.0,3.3],[-0.2,357022.0,6.0,80.19,1.5,38100.0,2.5],[0.06,131957.0,17.4,80.05,4.3,26300.0,3.3],[-0.18,93028.0,10.9,75.02,1.75,19600.0,3.9],[0.67,103000.0,7.4,81.0,0.0,38100.0,4.0],[1.11,70273.0,14.4,80.32,0.9,40800.0,2.6],[0.38,301340.0,8.4,81.86,1.8,30500.0,2.9],[-0.6,64589.0,12.8,72.93,1.1,16800.0,4.4],[-0.28,65300.0,15.4,75.55,0.9,19100.0,4.1],[1.14,2586.0,5.7,79.75,0.9,80600.0,3.4],[0.45,41543.0,4.4,80.91,1.6,42000.0,2.3],[0.33,323802.0,3.3,80.32,1.9,53400.0,1.3],[-0.08,312685.0,12.4,76.25,1.9,20200.0,4.2],[0.18,92090.0,12.7,78.7,2.3,23400.0,3.7],[0.1,49035.0,13.2,76.03,1.08,23300.0,3.9],[-0.19,20273.0,11.8,77.48,1.7,28800.0,1.8],[0.65,505370.0,21.7,81.27,1.2,30500.0,3.1],[0.17,450295.0,7.5,81.18,1.5,40700.0,3.0],[0.92,41277.0,2.8,81.17,1.0,44500.0,0.2],[-0.63,603550.0,7.9,68.74,1.4,7200.0,8.0],[0.55,243610.0,8.1,80.17,2.7,36500.0,4.5]],"z":[[-0.1768,-0.5078,-1.2455,0.5708,-1.0243,0.6839,0.1144],[-0.1159,-0.836,-0.5924,0.4878,-0.389,0.4171,0.1144],[-1.8606,-0.3417,-0.07,-1.3675,1.2631,-1.2682,0.6243],[-0.4202,-0.6756,1.6934,-0.6809,0.9962,-0.9733,-0.7595],[-0.5014,-0.5386,-0.3094,-0.2371,-0.5796,-0.3343,-1.0508],[0.2492,-0.7587,-0.8319,0.21,-0.389,0.3609,-0.3954],[-1.5563,-0.7456,0.5613,-1.4505,0.5006,-0.8048,1.2069],[-0.0956,1.0564,-0.4618,0.4111,0.5006,0.2907,-0.0312],[-0.6434,1.1725,-0.8537,0.6602,-0.1348,0.4381,-0.6139],[-0.1159,-0.212,1.628,0.6155,3.4234,-0.3905,-0.0312],[-0.6028,-0.4515,0.213,-0.9907,0.1829,-0.861,0.4058],[1.1216,-0.3902,-0.5489,0.9188,-2.041,0.4381,0.4786],[2.0142,-0.5915,0.975,0.7017,-0.8973,0.6277,-0.541],[0.5333,0.83,-0.3312,1.1934,0.2464,-0.0956,-0.3225],[-1.4549,-0.6265,0.6267,-1.6581,-0.6431,-1.0576,0.7699],[-0.8057,-0.6221,1.1927,-0.8214,-0.8973,-0.8961,0.5514],[2.0751,-1.0079,-0.919,0.5197,-0.8973,3.4225,0.0416],[0.6753,-0.7682,-1.202,0.8901,-0.0077,0.712,-0.7595],[0.4318,0.9682,-1.4415,0.7017,0.3735,1.5125,-1.4878],[-0.3999,0.8998,0.5396,-0.5979,0.3735,-0.8188,0.6243],[0.1275,-0.4573,0.6049,0.1844,0.8818,-0.5941,0.2601],[-0.0348,-0.7221,0.7137,-0.6682,-0.6685,-0.6011,0.4058],[-0.6231,-0.8991,0.409,-0.2052,0.1194,-0.2149,-1.1237],[1.081,2.0851,2.5641,1.005,-0.516,-0.0956,-0.1769],[0.1072,1.7463,-0.5271,0.9763,-0.1348,0.6207,-0.2497],[1.6288,-0.7699,-1.5503,0.9731,-0.7702,0.8875,-2.2889],[-1.5157,2.6891,-0.4401,-2.996,-0.2619,-1.7317,3.3918],[0.8781,0.4748,-0.3965,0.6538,1.3902,0.3258,0.8427]],"mean":[0.1171,166422.5357,9.9214,78.1225,1.6061,31860.7143,3.3429],"std":[0.4929,162555.7528,4.5936,3.1317,0.7869,14240.795,1.3731]},"own":{"scores":[[1.0817,1.2701,0.5148,-0.4139,0.0013,0.3815,0.5755],[0.6811,0.416,0.6873,-0.2834,0.2735,0.3791,0.481],[-2.6099,-0.2696,0.623,-1.3319,0.0019,-0.0038,0.0251],[-1.2701,-1.9014,0.8319,0.3719,-0.3779,-0.4349,-0.2997],[0.1672,0.1319,1.002,-0.2634,-1.0474,-0.1278,-0.115],[0.9552,0.4096,0.7323,-0.3913,0.0279,0.1731,-0.1066],[-2.4877,0.0858,0.9875,-0.304,0.5556,-0.1847,0.3811],[0.2106,0.0337,-1.1744,-0.6145,-0.1458,-0.0567,0.1289],[0.5924,0.4718,-0.9923,-0.8437,-0.9813,-0.1524,0.533],[-1.0005,-3.4068,-0.7381,-0.7932,1.0685,0.0941,0.17],[-1.3969,0.0342,0.6952,-0.0973,0.0504,0.0316,-0.2908],[1.5837,1.4773,0.3067,1.2517,0.1672,0.8573,0.1677],[1.8089,-0.5218,0.3016,1.8298,0.3727,-0.016,-0.4681],[0.8532,-0.3278,-1.1145,-0.1377,-0.3772,0.6642,-0.0341],[-2.3061,0.6753,1.3015,0.374,-0.247,-0.2773,0.1734],[-1.5301,0.195,1.0768,1.142,-0.2831,-0.0042,0.3496],[3.4784,1.0763,0.3613,0.3611,2.0215,-1.1442,0.2059],[1.8401,0.0572,0.4538,-0.7701,0.1326,0.3792,-0.133],[2.1065,0.144,-1.0355,-1.3627,-0.547,-0.7931,-0.1387],[-1.4718,-0.073,-0.7419,0.2079,-0.1163,-0.0103,-0.1979],[-0.5265,-1.0348,0.1277,0.0561,0.4518,0.4894,-0.1118],[-0.783,0.1723,0.9514,0.9305,0.096,0.0817,-0.1478],[-0.0675,-0.7977,1.1716,-0.2374,-0.7152,-0.3659,0.1176],[0.1638,-1.1521,-2.1298,2.6138,-0.7251,-0.3001,0.2652],[0.8851,0.4029,-1.796,-0.2411,-0.6126,-0.0626,0.3863],[3.2816,0.1082,0.7531,-0.4761,-0.8138,0.0552,-0.9882],[-4.5803,2.829,-1.893,-0.0116,0.4677,-0.1832,-0.672],[0.3408,-0.5057,-1.2641,-0.5653,1.3012,0.5307,-0.2569]],"V":[[0.4757,-0.1249,-0.2717,0.4829,-0.1881,0.5005,-0.4065],[-0.0826,0.1729,-0.5532,-0.2652,-0.6583,0.1301,0.3697],[-0.1637,-0.8983,-0.0005,-0.2461,-0.2437,-0.084,-0.1982],[0.3925,0.0449,0.702,0.0268,-0.5624,-0.0843,0.1647],[0.3479,-0.324,0.0102,-0.1018,0.3681,0.3906,0.6895],[0.1209,-0.1901,-0.2597,0.6064,-0.0356,-0.6387,0.3239],[-0.6711,-0.0666,0.2447,0.507,-0.1373,0.3974,0.2267]],"ratio":[0.461,0.1696,0.1519,0.1101,0.0654,0.0241,0.0179]},"sk":{"scores":[[1.0817,-1.2701,-0.5148,-0.4139,0.0013,-0.3815,-0.5755],[0.6811,-0.416,-0.6873,-0.2834,0.2735,-0.3791,-0.481],[-2.6099,0.2696,-0.623,-1.3319,0.0019,0.0038,-0.0251],[-1.2701,1.9014,-0.8319,0.3719,-0.3779,0.4349,0.2997],[0.1672,-0.1319,-1.002,-0.2634,-1.0474,0.1278,0.115],[0.9552,-0.4096,-0.7323,-0.3913,0.0279,-0.1731,0.1066],[-2.4877,-0.0858,-0.9875,-0.304,0.5556,0.1847,-0.3811],[0.2106,-0.0337,1.1744,-0.6145,-0.1458,0.0567,-0.1289],[0.5924,-0.4718,0.9923,-0.8437,-0.9813,0.1524,-0.533],[-1.0005,3.4068,0.7381,-0.7932,1.0685,-0.0941,-0.17],[-1.3969,-0.0342,-0.6952,-0.0973,0.0504,-0.0316,0.2908],[1.5837,-1.4773,-0.3067,1.2517,0.1672,-0.8573,-0.1677],[1.8089,0.5218,-0.3016,1.8298,0.3727,0.016,0.4681],[0.8532,0.3278,1.1145,-0.1377,-0.3772,-0.6642,0.0341],[-2.3061,-0.6753,-1.3015,0.374,-0.247,0.2773,-0.1734],[-1.5301,-0.195,-1.0768,1.142,-0.2831,0.0042,-0.3496],[3.4784,-1.0763,-0.3613,0.3611,2.0215,1.1442,-0.2059],[1.8401,-0.0572,-0.4538,-0.7701,0.1326,-0.3792,0.133],[2.1065,-0.144,1.0355,-1.3627,-0.547,0.7931,0.1387],[-1.4718,0.073,0.7419,0.2079,-0.1163,0.0103,0.1979],[-0.5265,1.0348,-0.1277,0.0561,0.4518,-0.4894,0.1118],[-0.783,-0.1723,-0.9514,0.9305,0.096,-0.0817,0.1478],[-0.0675,0.7977,-1.1716,-0.2374,-0.7152,0.3659,-0.1176],[0.1638,1.1521,2.1298,2.6138,-0.7251,0.3001,-0.2652],[0.8851,-0.4029,1.796,-0.2411,-0.6126,0.0626,-0.3863],[3.2816,-0.1082,-0.7531,-0.4761,-0.8138,-0.0552,0.9882],[-4.5803,-2.829,1.893,-0.0116,0.4677,0.1832,0.672],[0.3408,0.5057,1.2641,-0.5653,1.3012,-0.5307,0.2569]],"V":[[0.4757,-0.1249,-0.2717,0.4829,-0.1881,0.5005,-0.4065],[0.0826,-0.1729,0.5532,0.2652,0.6583,-0.1301,-0.3697],[0.1637,0.8983,0.0005,0.2461,0.2437,0.084,0.1982],[0.3925,0.0449,0.702,0.0268,-0.5624,-0.0843,0.1647],[0.3479,-0.324,0.0102,-0.1018,0.3681,0.3906,0.6895],[-0.1209,0.1901,0.2597,-0.6064,0.0356,0.6387,-0.3239],[0.6711,0.0666,-0.2447,-0.507,0.1373,-0.3974,-0.2267]],"ratio":[0.461,0.1696,0.1519,0.1101,0.0654,0.0241,0.0179],"signs":[1,-1,-1,1,1,-1,-1]},"nuevos":{"countries":["Argentina_2012","Argentina_2024","Brazil_2012","Brazil_2024"],"raw":[[0.98,2780400.0,7.2,77.14,0.8,17400.0,9.8],[0.81,2780400.0,7.6,78.0,0.4,22100.0,140.0],[0.88,8515770.0,6.0,72.79,1.5,11900.0,5.4],[0.62,8515770.0,7.5,76.0,1.1,18100.0,4.0]],"z":[[1.7505,16.0805,-0.5924,-0.3137,-1.0243,-1.0154,4.7027],[1.4056,16.0805,-0.5054,-0.0391,-1.5327,-0.6854,99.5271],[1.5476,51.363,-0.8537,-1.7028,-0.1348,-1.4017,1.4982],[1.0202,51.363,-0.5271,-0.6777,-0.6431,-0.9663,0.4786]],"scores":[[-3.3932,-5.3267,15.2513,2.42,-2.1067,0.674,1.7473],[-41.7353,-40.6643,33.96,18.2274,63.0695,-29.9461,-20.3424],[-7.5532,-10.1354,46.1195,2.7068,-15.5036,9.0037,5.7327],[-6.6699,-9.7408,45.9962,2.8378,-16.5082,9.1208,4.7675]]},"exp":{"countries":["Austria","Belgium","Bulgaria","Croatia","Czech Republic","Denmark","Estonia","Finland","Germany","Greece","Hungary","Iceland","Ireland","Italy","Latvia","Lithuania","Luxembourg","Netherlands","Norway","Poland","Portugal","Slovakia","Slovenia","Spain","Sweden","Switzerland","Ukraine","United Kingdom","Argentina_2012"],"scores":[[1.1658,-0.3617,1.2735,-0.1722,0.1746,-0.5856,-0.1918],[0.7195,0.094,0.5785,-0.1354,0.0168,-0.4647,-0.2397],[-2.4905,1.0538,0.5563,-1.0697,0.0715,0.041,0.03],[-1.4248,1.5859,-1.0319,0.5657,0.0911,0.4762,0.3488],[0.0403,0.604,0.8828,0.2943,0.6758,0.2456,0.244],[0.9093,0.1061,0.6981,-0.1637,0.0711,0.135,-0.1633],[-2.3486,0.6672,0.5447,-0.1273,-0.5136,-0.2896,0.0987],[0.3938,0.1255,-0.1306,-0.7706,0.1147,-0.1997,0.1126],[0.7487,0.1666,0.5643,-0.677,0.6724,-0.5284,0.4126],[-0.9375,2.0472,-2.8733,-1.3548,-0.4376,-0.1372,-0.1019],[-1.3671,0.4397,0.3882,0.0682,-0.0618,0.307,-0.1164],[1.6398,-1.139,0.724,1.2063,0.1496,-0.343,-0.724],[1.6639,-0.1502,-0.9437,1.627,-0.3978,0.4435,-0.1992],[0.9558,0.0536,-0.5993,-0.3646,0.6546,-0.1342,-0.4234],[-2.2507,0.3602,1.1216,0.8018,-0.0913,-0.0655,0.2211],[-1.5121,0.3089,0.3831,1.41,0.0694,-0.2826,0.0555],[3.4976,-0.8105,0.4646,0.1377,-2.1172,-0.073,0.5185],[1.7729,0.193,0.3523,-0.6424,0.174,0.1335,-0.3099],[2.1382,0.275,0.3779,-1.2435,0.0787,0.2224,0.712],[-1.2958,0.1708,-0.2682,0.0468,0.0196,0.1019,-0.037],[-0.4986,0.6675,-0.8885,-0.1284,-0.0226,0.0546,-0.4541],[-0.8027,0.1238,0.2452,1.0663,-0.1465,0.1618,-0.1675],[-0.2254,1.1917,0.1778,0.2531,0.3789,0.1005,0.4398],[0.303,-0.0179,-2.1923,2.0492,0.2195,-0.3907,0.3539],[1.1133,-0.2425,-0.0857,-0.4278,0.4099,-0.4957,0.2371],[2.976,0.1383,0.6444,-0.0617,0.6357,1.0471,-0.0895],[-3.9487,-1.51,1.5863,-0.4061,-0.7389,0.3127,-0.2088],[0.56,-0.0385,-1.0559,-1.2119,-0.5869,0.0398,-0.6454],[-1.4952,-6.1026,-1.4943,-0.5694,0.4364,0.1673,0.2872]],"V":[[0.4415,-0.1215,-0.2844,0.5085,-0.1747,0.5375,-0.3624],[-0.3159,-0.6454,0.2439,0.0232,0.385,-0.0081,-0.5248],[-0.3842,-0.3113,-0.5874,-0.3684,-0.5154,0.0787,-0.0545],[0.1976,-0.204,0.6326,-0.0654,-0.7042,-0.1029,-0.092],[-0.2394,0.3388,-0.158,0.4348,-0.1994,-0.5992,-0.4638],[0.6033,0.0436,-0.1874,-0.5614,0.1386,-0.2935,-0.4224],[-0.312,0.5599,0.2334,-0.3109,-0.0274,0.4991,-0.4339]],"ratio":[0.4165,0.2603,0.1446,0.1032,0.0416,0.0175,0.0165]},"all":{"countries":["Austria","Belgium","Bulgaria","Croatia","Czech Republic","Denmark","Estonia","Finland","Germany","Greece","Hungary","Iceland","Ireland","Italy","Latvia","Lithuania","Luxembourg","Netherlands","Norway","Poland","Portugal","Slovakia","Slovenia","Spain","Sweden","Switzerland","Ukraine","United Kingdom","Argentina_2012","Argentina_2024","Brazil_2012","Brazil_2024"],"raw":[[0.03,83871.0,4.2,79.91,0.8,41600.0,3.5],[0.06,30528.0,7.2,79.65,1.3,37800.0,3.5],[-0.8,110879.0,9.6,73.84,2.6,13800.0,4.2],[-0.09,56594.0,17.7,75.99,2.39,18000.0,2.3],[-0.13,78867.0,8.5,77.38,1.15,27100.0,1.9],[0.24,43094.0,6.1,78.78,1.3,37000.0,2.8],[-0.65,45228.0,12.5,73.58,2.0,20400.0,5.0],[0.07,338145.0,7.8,79.41,2.0,36000.0,3.3],[-0.2,357022.0,6.0,80.19,1.5,38100.0,2.5],[0.06,131957.0,17.4,80.05,4.3,26300.0,3.3],[-0.18,93028.0,10.9,75.02,1.75,19600.0,3.9],[0.67,103000.0,7.4,81.0,0.0,38100.0,4.0],[1.11,70273.0,14.4,80.32,0.9,40800.0,2.6],[0.38,301340.0,8.4,81.86,1.8,30500.0,2.9],[-0.6,64589.0,12.8,72.93,1.1,16800.0,4.4],[-0.28,65300.0,15.4,75.55,0.9,19100.0,4.1],[1.14,2586.0,5.7,79.75,0.9,80600.0,3.4],[0.45,41543.0,4.4,80.91,1.6,42000.0,2.3],[0.33,323802.0,3.3,80.32,1.9,53400.0,1.3],[-0.08,312685.0,12.4,76.25,1.9,20200.0,4.2],[0.18,92090.0,12.7,78.7,2.3,23400.0,3.7],[0.1,49035.0,13.2,76.03,1.08,23300.0,3.9],[-0.19,20273.0,11.8,77.48,1.7,28800.0,1.8],[0.65,505370.0,21.7,81.27,1.2,30500.0,3.1],[0.17,450295.0,7.5,81.18,1.5,40700.0,3.0],[0.92,41277.0,2.8,81.17,1.0,44500.0,0.2],[-0.63,603550.0,7.9,68.74,1.4,7200.0,8.0],[0.55,243610.0,8.1,80.17,2.7,36500.0,4.5],[0.98,2780400.0,7.2,77.14,0.8,17400.0,9.8],[0.81,2780400.0,7.6,78.0,0.4,22100.0,140.0],[0.88,8515770.0,6.0,72.79,1.5,11900.0,5.4],[0.62,8515770.0,7.5,76.0,1.1,18100.0,4.0]],"scores":[[1.285,-0.2488,-0.8613,-1.0003,0.0291,0.4054,-0.3312],[0.7007,-0.5233,-0.3614,-0.4916,0.0899,0.2715,-0.2323],[-2.6382,-0.4762,-0.6179,-0.4371,1.0182,0.021,0.0022],[-2.0344,-0.799,0.9715,0.5999,-0.3037,-0.266,0.0686],[-0.3035,-0.1335,-0.4429,-0.7129,-0.2538,0.3042,-0.0507],[0.7922,-0.2959,-0.5373,-0.4347,0.116,0.0817,0.135],[-2.2961,-0.3689,-0.2184,-0.6115,0.1371,-0.3876,-0.2643],[0.2942,-0.741,-0.2551,0.0857,0.6191,0.1248,-0.1407],[0.5659,-0.6668,-0.6429,-0.5148,0.4924,0.5085,-0.5662],[-1.6097,-2.2293,1.4743,2.1399,1.5072,-0.1875,-0.0149],[-1.4224,-0.1078,-0.1717,-0.3548,-0.0369,-0.1078,0.255],[1.9861,0.2569,-0.0519,-0.7232,-1.2205,0.5677,0.1359],[1.4977,-0.337,1.1209,0.5877,-1.4297,-0.3671,0.3798],[0.8039,-0.6879,0.1971,0.4122,0.3153,0.8032,0.1634],[-2.1791,0.2251,-0.2784,-1.1398,-0.7399,-0.2118,-0.2085],[-1.5012,0.0153,0.4327,-0.7105,-1.2472,0.0748,-0.2802],[3.6391,-0.7501,-0.4291,-0.1386,-0.3214,-1.9173,-0.3007],[1.5488,-0.6177,-0.5284,-0.0573,0.5675,0.2549,0.2145],[1.7404,-0.8931,-0.8983,-0.0228,0.9989,-0.3391,-0.2026],[-1.2832,-0.2786,0.1963,0.0334,-0.0651,0.0082,0.1444],[-0.6933,-0.7765,0.5881,0.5987,0.2251,0.2041,0.2727],[-0.7884,0.0405,0.2992,-0.3953,-0.9421,-0.1161,0.1616],[-0.7536,-0.6474,0.0593,-0.2362,-0.13,0.0244,-0.2689],[0.1155,-0.7528,2.1433,1.0266,-1.8396,0.1451,-0.3897],[1.0597,-0.6983,-0.1892,-0.0582,0.2436,0.3944,-0.3964],[2.4844,-0.1655,-0.6601,-0.1076,0.0433,0.2027,0.6749],[-2.9435,1.1583,-1.2454,-1.3511,0.0376,-0.5862,0.5594],[0.6185,-0.9874,0.1572,0.9543,1.0802,-0.1043,0.4722],[0.6211,1.7513,-0.1786,0.5607,-0.5919,0.3438,0.9058],[1.3179,4.0496,3.3211,-1.8193,1.7713,-0.1057,-0.1198],[-0.5712,3.5835,-1.3374,2.2677,0.0928,-0.3172,0.0575],[-0.0532,3.1024,-1.0553,2.0506,-0.2632,0.2733,-0.8359]],"V":[[0.5016,-0.0055,-0.357,0.4953,-0.29,0.5342,0.0787],[0.2255,0.6071,-0.1997,-0.3233,-0.3852,-0.3126,0.436],[0.2224,-0.1919,0.6443,0.2757,0.0639,-0.0954,0.6398],[0.4347,0.5658,0.2509,0.1758,0.5051,-0.0688,-0.3705],[-0.1731,0.0471,-0.5078,0.0864,0.681,0.0415,0.4867],[-0.2246,0.0405,-0.1791,0.6945,-0.1678,-0.6279,-0.1057],[0.6155,-0.5202,-0.2541,-0.2312,0.128,-0.4551,-0.0951]],"ratio":[0.3522,0.2513,0.1309,0.1252,0.0912,0.0305,0.0187]}};
+
+// ---------- helpers ----------
+const F = D.features;
+const EU = D.europe.countries;
+const C = { mag: '#c51b8a', pink: '#fa9fb5', amb: 'rgb(245,181,62)', ambD: '#a86b00' };
+const SANS = getComputedStyle(document.documentElement).getPropertyValue('--sans').trim();
+const DUR = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 800;
+const LOC = d3.formatLocale({ decimal: ',', thousands: '.', grouping: [3], currency: ['$', ''], minus: '−' });
+const f1 = LOC.format('.1f'), f2 = LOC.format('.2f'), f3 = LOC.format('.3f'), fG = LOC.format('~g'), fN = LOC.format(',~f');
+const pct = v => f1(v * 100) + '%';
+const nice = s => s.replace(/_/g, ' ');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const DIVI = d3.interpolateRgbBasis([C.ambD, C.amb, '#f3f3f3', C.pink, C.mag]);
+const div = v => DIVI((clamp(v, -1, 1) + 1) / 2);
+const cctx = document.createElement('canvas').getContext('2d');
+const textW = (s, font) => { cctx.font = font; return cctx.measureText(s).width; };
+const FONT_E = `10.5px ${SANS}`, FONT_N = `600 12px ${SANS}`, FONT_F = `600 12px ${SANS}`;
+const NUEVOS = new Set(D.nuevos.countries);
+const toPts = (names, S) => names.map((c, i) => ({ id: c, x: S[i][0], y: S[i][1], nuevo: NUEVOS.has(c) }));
+const toArrows = (V, k = 5) => F.map((f, j) => ({ f, x: k * V[0][j], y: k * V[1][j] }));
+const $ = (s, r = document) => r.querySelector(s);
+const size = el => [el.clientWidth, el.clientHeight];
+const safe = (name, fn) => { try { fn(); } catch (e) { console.error('[slides] ' + name, e); } };
+
+function renderCode(pre, src) {
+  const clean = src.replace(/^\s*\n/, '').replace(/\s+$/, '');
+  const html = Prism.highlight(clean, Prism.languages.python, 'python');
+  pre.innerHTML = html.split('\n').map((l, i) => `<span class="ln" data-i="${i}">${l || ' '}</span>`).join('');
+}
+
+// Coloca cada etiqueta en la posición candidata más cercana a su punto que no pise
+// otras etiquetas ni obstáculos (puntos, flechas, nombres de features).
+const overlapArea = (a, b) =>
+  Math.max(0, (a.w + b.w) / 2 + 2 - Math.abs(a.cx - b.cx)) * Math.max(0, (a.h + b.h) / 2 + 1 - Math.abs(a.cy - b.cy));
+function layoutLabels(items, obstacles, W, H) {
+  const obs = obstacles.map(o => ({ cx: o.x, cy: o.y, w: o.w, h: o.h }));
+  const placed = [];
+  const order = items.slice().sort((a, b) => (b.nuevo - a.nuevo) || (a.ay - b.ay));
+  for (const d of order) {
+    let best = null, bestScore = Infinity;
+    for (const r of [0, 6, 13, 21, 30, 42, 56]) {
+      const ex = d.w / 2 + 6 + r, ey = d.h / 2 + 4 + r, dx = d.w / 2 + 3 + r * 0.7, dy = d.h / 2 + 2 + r * 0.7;
+      for (const [ox, oy] of [[ex, 0], [-ex, 0], [dx, -dy], [-dx, -dy], [dx, dy], [-dx, dy], [0, -ey], [0, ey]]) {
+        const box = { cx: clamp(d.ax + ox, d.w / 2 + 2, W - d.w / 2 - 2), cy: clamp(d.ay + oy, d.h / 2 + 2, H - d.h / 2 - 2), w: d.w, h: d.h };
+        let ov = 0;
+        for (const b of obs) ov += overlapArea(box, b);
+        for (const b of placed) ov += overlapArea(box, b);
+        const score = ov * 100 + r + Math.abs(oy) * 0.01;
+        if (score < bestScore) { bestScore = score; best = box; }
+      }
+      if (bestScore < 1000 && bestScore <= r + 1) break;
+    }
+    Object.assign(d, { cx: best.cx, cy: best.cy });
+    placed.push(d);
+  }
+  const L = items;
+  L.forEach(d => {
+    d.nx = clamp(d.ax, d.cx - d.w / 2, d.cx + d.w / 2);
+    d.ny = clamp(d.ay, d.cy - d.h / 2, d.cy + d.h / 2);
+    d.far = Math.hypot(d.nx - d.ax, d.ny - d.ay) > 9;
+  });
+  return L;
+}
+
+// ---------- biplot: países (puntos) + features (flechas × 5) ----------
+let UID = 0;
+function biplot(el, o = {}) {
+  const [W, H] = size(el);
+  const m = { t: 8, r: 8, b: 34, l: 40, ...(o.margin || {}) };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const id = 'bp' + (++UID);
+  const svg = d3.select(el).append('svg').attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
+  const defs = svg.append('defs');
+  defs.append('clipPath').attr('id', id + 'c').append('rect').attr('width', iw).attr('height', ih);
+  defs.append('marker').attr('id', id + 'a').attr('viewBox', '0 0 10 10').attr('refX', 9).attr('refY', 5)
+    .attr('markerWidth', 9).attr('markerHeight', 9).attr('markerUnits', 'userSpaceOnUse').attr('orient', 'auto')
+    .append('path').attr('d', 'M0,1L10,5L0,9Z').attr('fill', C.mag);
+  const g = svg.append('g').attr('transform', `translate(${m.l},${m.t})`);
+  g.append('rect').attr('class', 'plot').attr('width', iw).attr('height', ih);
+  const gx = g.append('g').attr('class', 'axis').attr('transform', `translate(0,${ih})`);
+  const gy = g.append('g').attr('class', 'axis');
+  if (!o.noAxes) {
+    g.append('text').attr('class', 'axlab').attr('x', iw).attr('y', ih + 30).attr('text-anchor', 'end').text('Primer componente principal');
+    g.append('text').attr('class', 'axlab').attr('transform', 'translate(-30,0) rotate(-90)').attr('text-anchor', 'end').text('Segunda componente principal');
+  }
+  const inner = g.append('g').attr('clip-path', `url(#${id}c)`);
+  const zx = inner.append('line').attr('class', 'zero'), zy = inner.append('line').attr('class', 'zero');
+  const gA = inner.append('g'), gLd = inner.append('g'), gP = inner.append('g'), gL = inner.append('g');
+  const hover = inner.append('text').attr('class', 'hovername').attr('opacity', 0);
+  const overlay = inner.append('rect').attr('width', iw).attr('height', ih).attr('fill', 'transparent');
+  const gF = inner.append('g');
+  const gE = g.append('g');
+  const x = d3.scaleLinear().range([0, iw]), y = d3.scaleLinear().range([ih, 0]);
+  let P = [], PIN = [], LAB = [], delaunay = null, hiId = null, colorFn = null;
+
+  overlay.on('pointermove', e => {
+    if (!delaunay) return;
+    const [mx, my] = d3.pointer(e);
+    const p = PIN[delaunay.find(mx, my)];
+    hi(p && Math.hypot(p.X - mx, p.Y - my) < 24 ? p.id : null);
+  }).on('pointerleave', () => hi(null));
+
+  function domainOf(st) {
+    if (st.dom) return [st.dom.x, st.dom.y];
+    const xs = [0, ...st.pts.map(p => p.x), ...st.arrows.map(a => a.x)];
+    const ys = [0, ...st.pts.map(p => p.y), ...st.arrows.map(a => a.y)];
+    const [x0, x1] = d3.extent(xs), [y0, y1] = d3.extent(ys);
+    const px = (x1 - x0) * 0.08, py = (y1 - y0) * 0.08;
+    return [[x0 - px, x1 + px], [y0 - py, y1 + py]];
+  }
+
+  function update(st, dur = 0) {
+    const t = svg.transition().duration(dur).ease(d3.easeCubicInOut);
+    const [dx, dy] = domainOf(st);
+    x.domain(dx); y.domain(dy);
+    if (!o.noAxes) {
+      gx.transition(t).call(d3.axisBottom(x).ticks(Math.max(3, Math.round(iw / 90))).tickSizeOuter(0).tickFormat(fG));
+      gy.transition(t).call(d3.axisLeft(y).ticks(Math.max(3, Math.round(ih / 70))).tickSizeOuter(0).tickFormat(fG));
+    }
+    const ox = x(0), oy = y(0);
+    zx.transition(t).attr('x1', ox).attr('x2', ox).attr('y1', 0).attr('y2', ih);
+    zy.transition(t).attr('x1', 0).attr('x2', iw).attr('y1', oy).attr('y2', oy);
+
+    const A = st.arrows.map(a => {
+      const X = x(a.x), Y = y(a.y), vx = X - ox, vy = Y - oy, len = Math.hypot(vx, vy) || 1;
+      const w = textW(a.f, FONT_F), ux = vx / len, uy = vy / len;
+      const cx = X + ux * (8 + Math.abs(ux) * w / 2), cy = Y + uy * (8 + Math.abs(uy) * 7);
+      return { ...a, X, Y, cx, cy, w, h: 14 };
+    });
+    // nombres de features: dentro del gráfico y sin pisarse entre sí
+    for (let it = 0; it < 80; it++) {
+      for (let i = 0; i < A.length; i++) for (let j = i + 1; j < A.length; j++) {
+        const p = A[i], q = A[j];
+        const wx = (p.w + q.w) / 2 + 4 - Math.abs(p.cx - q.cx), wy = 15 - Math.abs(p.cy - q.cy);
+        if (wx > 0 && wy > 0) { const s = (p.cy <= q.cy ? -1 : 1) * wy / 2; p.cy += s; q.cy -= s; }
+      }
+      A.forEach(a => { a.cx = clamp(a.cx, a.w / 2 + 3, iw - a.w / 2 - 3); a.cy = clamp(a.cy, 9, ih - 9); });
+    }
+    const arrowObs = [];
+    A.forEach(a => {
+      const n = Math.floor(Math.hypot(a.X - ox, a.Y - oy) / 12);
+      for (let k = 1; k <= n; k++) arrowObs.push({ x: ox + (a.X - ox) * k / n, y: oy + (a.Y - oy) * k / n, w: 5, h: 5 });
+    });
+    gA.selectAll('line.arr').data(A, d => d.f).join(
+      en => en.append('line').attr('class', 'arr').attr('marker-end', `url(#${id}a)`)
+        .attr('x1', ox).attr('y1', oy).attr('x2', ox).attr('y2', oy))
+      .transition(t).attr('x1', ox).attr('y1', oy).attr('x2', d => d.X).attr('y2', d => d.Y);
+    gF.selectAll('text.feat').data(A, d => d.f).join(
+      en => en.append('text').attr('class', 'feat' + (o.onFeature ? ' hov' : '')).attr('x', ox).attr('y', oy).text(d => d.f)
+        .on('pointerenter', (e, d) => feat(d.f)).on('pointerleave', () => feat(null)))
+      .transition(t).attr('x', d => d.cx).attr('y', d => d.cy).attr('opacity', st.featLabels === false ? 0 : 1);
+
+    const [x0, x1] = dx, [y0, y1] = dy;
+    P = st.pts.map(p => ({ ...p, X: x(p.x), Y: y(p.y), inside: p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1 }));
+    PIN = P.filter(p => p.inside);
+    gP.selectAll('circle.pt').data(P, d => d.id).join(
+      en => en.append('circle').attr('class', d => 'pt' + (d.nuevo ? ' nuevo' : '')).attr('cx', d => d.X).attr('cy', d => d.Y).attr('r', 0),
+      up => up,
+      ex => ex.transition(t).attr('r', 0).remove())
+      .classed('hi', false).classed('dim', false).order()
+      .transition(t).attr('cx', d => d.X).attr('cy', d => d.Y).attr('r', d => d.nuevo ? 5 : 4);
+
+    LAB = [];
+    if (st.labels && st.labels !== 'none') {
+      const items = PIN.filter(p => st.labels === 'all' || p.nuevo).map(p => {
+        const txt = nice(p.id);
+        return { id: p.id, txt, nuevo: p.nuevo, ax: p.X, ay: p.Y, w: textW(txt, p.nuevo ? FONT_N : FONT_E), h: p.nuevo ? 14 : 12 };
+      });
+      const obs = PIN.map(p => ({ x: p.X, y: p.Y, w: 10, h: 10 }))
+        .concat(st.featLabels === false ? [] : A.map(a => ({ x: a.cx, y: a.cy, w: a.w + 4, h: 14 })))
+        .concat(arrowObs);
+      LAB = layoutLabels(items, obs, iw, ih);
+    }
+    gL.selectAll('text.lbl').data(LAB, d => d.id).join(
+      en => en.append('text').attr('class', d => 'lbl' + (d.nuevo ? ' nuevo' : '')).attr('x', d => d.ax).attr('y', d => d.ay).attr('opacity', 0).text(d => d.txt),
+      up => up,
+      ex => ex.transition(t).attr('opacity', 0).remove())
+      .classed('hi', false).classed('dim', false)
+      .transition(t).attr('x', d => d.cx).attr('y', d => d.cy).attr('opacity', 1);
+    gLd.selectAll('line.lead').data(LAB, d => d.id).join(
+      en => en.append('line').attr('class', 'lead').attr('x1', d => d.ax).attr('y1', d => d.ay).attr('x2', d => d.ax).attr('y2', d => d.ay),
+      up => up,
+      ex => ex.remove())
+      .classed('dim', false)
+      .transition(t).attr('x1', d => d.ax).attr('y1', d => d.ay).attr('x2', d => d.nx).attr('y2', d => d.ny).attr('opacity', d => d.far ? 1 : 0);
+
+    // puntos fuera del rango visible: marcador en el borde
+    const E = P.filter(p => !p.inside && (st.labels === 'all' || p.nuevo)).map(p => {
+      const cx = iw / 2, cy = ih / 2, vx = p.X - cx, vy = p.Y - cy;
+      const s = Math.min((iw / 2 - 12) / Math.abs(vx || 1e-9), (ih / 2 - 12) / Math.abs(vy || 1e-9));
+      return { ...p, ex: cx + vx * s, ey: cy + vy * s, ang: Math.atan2(vy, vx) * 180 / Math.PI };
+    });
+    const eg = gE.selectAll('g.edge').data(E, d => d.id).join(
+      en => { const q = en.append('g').attr('class', 'edge').attr('opacity', 0); q.append('path').attr('d', 'M-7,-5L6,0L-7,5Z'); q.append('text'); return q; },
+      up => up,
+      ex => ex.transition(t).attr('opacity', 0).remove());
+    eg.attr('transform', d => `translate(${d.ex},${d.ey})`);
+    eg.select('path').attr('transform', d => `rotate(${d.ang})`);
+    eg.select('text').text(d => `${nice(d.id)} (${f1(d.x)}; ${f1(d.y)})`)
+      .attr('text-anchor', d => d.ex > iw / 2 ? 'end' : 'start')
+      .attr('x', d => d.ex > iw / 2 ? -12 : 12).attr('y', d => d.ey > ih / 2 ? -8 : 16);
+    eg.transition(t).attr('opacity', 1);
+
+    delaunay = PIN.length ? d3.Delaunay.from(PIN, d => d.X, d => d.Y) : null;
+    hiId = null; hover.attr('opacity', 0);
+    if (colorFn) paint(0);
+  }
+
+  function hi(idv) {
+    if (idv === hiId) return;
+    hiId = idv;
+    const pts = gP.selectAll('circle.pt').classed('hi', d => d.id === idv).classed('dim', d => idv != null && d.id !== idv);
+    if (idv != null) pts.filter(d => d.id === idv).raise();
+    gL.selectAll('text.lbl').classed('hi', d => d.id === idv).classed('dim', d => idv != null && d.id !== idv);
+    gLd.selectAll('line.lead').classed('dim', d => idv != null && d.id !== idv);
+    const p = P.find(q => q.id === idv);
+    const labeled = LAB.some(l => l.id === idv);
+    hover.attr('opacity', p && !labeled ? 1 : 0);
+    if (p) hover.attr('x', clamp(p.X, 50, iw - 50)).attr('y', p.Y < 24 ? p.Y + 20 : p.Y - 12).text(nice(p.id));
+  }
+
+  function feat(f) {
+    gA.selectAll('line.arr').classed('on', d => d.f === f).classed('dim', d => f != null && d.f !== f);
+    gF.selectAll('text.feat').classed('dim', d => f != null && d.f !== f);
+    if (o.onFeature) o.onFeature(f);
+  }
+
+  function paint(dur) {
+    gP.classed('colored', !!colorFn);
+    gP.selectAll('circle.pt').filter(p => !p.nuevo).transition('paint').duration(dur)
+      .style('fill', p => colorFn ? colorFn(p.id) : null);
+  }
+
+  return { update, hi, colorBy(fn) { colorFn = fn; paint(200); } };
+}
+
+// ---------- varianza: individual + acumulada (como el notebook, dos paneles) ----------
+function varPanels(el, groups) {
+  const [W, H] = size(el);
+  const gap = 34, m = { t: 30, r: 6, b: 46, l: 50 };
+  const pw = (W - gap) / 2, iw = pw - m.l - m.r, ih = H - m.t - m.b;
+  const names = groups[0].ratio.map((_, i) => String(i + 1));
+  const cums = groups.map(g => Array.from(d3.cumsum(g.ratio)));
+  const panels = [
+    { title: 'Varianza explicada individual', ylab: 'Fracción de varianza explicada', xlab: 'Número de componente principal', vals: k => groups[k].ratio, alt: false },
+    { title: 'Varianza acumulada', ylab: 'Fracción acumulada de varianza explicada', xlab: 'Cantidad de componentes principales', vals: k => cums[k], alt: true },
+  ];
+  const svg = d3.select(el).append('svg').attr('width', W).attr('height', H);
+  const x = d3.scaleBand(names, [0, iw]).padding(0.25);
+  const xs = d3.scaleBand(groups.map(g => g.key), [0, x.bandwidth()]).padding(groups.length > 1 ? 0.08 : 0);
+  const y = d3.scaleLinear([0, 1], [ih, 0]);
+  const allBars = [];
+  panels.forEach((pn, k) => {
+    const g = svg.append('g').attr('transform', `translate(${k * (pw + gap) + m.l},${m.t})`);
+    g.append('rect').attr('class', 'plot').attr('width', iw).attr('height', ih);
+    g.append('g').attr('class', 'grid').selectAll('line').data([0.2, 0.4, 0.6, 0.8]).join('line').attr('x2', iw).attr('y1', y).attr('y2', y);
+    g.append('g').attr('class', 'axis').call(d3.axisLeft(y).ticks(5).tickFormat(LOC.format('.1f')).tickSizeOuter(0));
+    g.append('g').attr('class', 'axis').attr('transform', `translate(0,${ih})`).call(d3.axisBottom(x).tickSizeOuter(0));
+    g.append('text').attr('class', 'axlab').attr('x', iw / 2).attr('y', ih + 36).attr('text-anchor', 'middle').text(pn.xlab);
+    g.append('text').attr('class', 'axlab').attr('transform', `translate(-38,${ih / 2}) rotate(-90)`).attr('text-anchor', 'middle').text(pn.ylab);
+    g.append('text').attr('class', 'infot').attr('x', 0).attr('y', -12).text(pn.title);
+    groups.forEach((gr, gi) => {
+      const vals = pn.vals(gi);
+      const cls = gr.cls || (pn.alt ? 'bar amb' : 'bar');
+      const bars = g.selectAll(`rect.b${gi}`).data(vals).join('rect').attr('class', `b${gi} ${cls}`)
+        .attr('x', (_, i) => x(names[i]) + xs(gr.key)).attr('width', xs.bandwidth())
+        .attr('y', y).attr('height', v => ih - y(v));
+      bars.each(function (_, i) { allBars.push({ el: this, i }); });
+    });
+    if (groups.length === 1) {
+      g.selectAll('text.vlab').data(pn.vals(0)).join('text').attr('class', 'vlab')
+        .attr('x', (_, i) => x(names[i]) + x.bandwidth() / 2).attr('y', v => y(v) - 5).text(v => f2(v));
+    }
+    g.selectAll('rect.hit').data(names).join('rect').attr('class', 'hit').attr('fill', 'transparent')
+      .attr('x', n => x(n) - x.step() * x.paddingInner() / 2).attr('width', x.step()).attr('height', ih)
+      .on('pointerenter', (e, n) => show(names.indexOf(n))).on('pointerleave', () => show(null));
+  });
+  const info = svg.append('text').attr('class', 'readout-svg').attr('x', W).attr('y', 14).attr('text-anchor', 'end');
+  function show(i) {
+    allBars.forEach(b => d3.select(b.el).classed('fade', i != null && b.i !== i));
+    if (i == null) { info.text(''); return; }
+    const parts = groups.map((g, k) => `${groups.length > 1 ? g.key + ': ' : ''}${f3(g.ratio[i])} · acumulada ${f3(cums[k][i])}`);
+    info.text(`Componente ${i + 1} — ${parts.join('   |   ')}`);
+  }
+}
+
+// ---------- componentes_df como mapa de calor ----------
+function heatmap(el, V) {
+  const [W, H] = size(el);
+  const m = { t: 24, r: 6, b: 4, l: 112 };
+  const iw = W - m.l - m.r;
+  const cw = iw / F.length, ch = Math.min((H - m.t - m.b) / V.length, 54);
+  const svg = d3.select(el).append('svg').attr('width', W).attr('height', H);
+  const g = svg.append('g').attr('transform', `translate(${m.l},${m.t})`);
+  const colT = g.selectAll('text.colt').data(F).join('text').attr('class', 'colt').attr('x', (_, j) => j * cw + cw / 2).attr('y', -9).text(f => f);
+  const rowT = g.selectAll('text.rowt').data(V).join('text').attr('class', 'rowt').attr('x', -10).attr('y', (_, i) => i * ch + ch / 2).text((_, i) => `Comp. Principal ${i + 1}`);
+  const cells = [];
+  V.forEach((r, i) => r.forEach((v, j) => cells.push({ i, j, v })));
+  const cg = g.selectAll('g.hc').data(cells).join('g').attr('class', 'hc').attr('transform', c => `translate(${c.j * cw},${c.i * ch})`);
+  cg.append('rect').attr('x', 1).attr('y', 1).attr('width', cw - 2).attr('height', ch - 2).attr('fill', c => div(c.v));
+  cg.append('text').attr('class', 'cell-t').attr('x', cw / 2).attr('y', ch / 2)
+    .attr('fill', c => Math.abs(c.v) > 0.62 ? '#fff' : 'rgba(0,0,0,.72)').text(c => f3(c.v));
+  cg.on('pointerenter', (e, c) => {
+    cg.classed('fade', k => k.i !== c.i && k.j !== c.j);
+    colT.classed('on', (_, j) => j === c.j);
+    rowT.classed('on', (_, i) => i === c.i);
+  });
+  svg.on('pointerleave', () => { cg.classed('fade', false); colT.classed('on', false); rowT.classed('on', false); });
+}
+
+// ---------- SPLOM: variables crudas, histogramas en la diagonal ----------
+function splom(el, onHi) {
+  const [W, H] = size(el);
+  const m = { t: 6, r: 6, b: 80, l: 96 };
+  const n = F.length;
+  const G = Math.min(W - m.l - m.r, H - m.t - m.b), cs = G / n, pad = 5;
+  const R = D.all.raw, isN = D.all.countries.map(c => NUEVOS.has(c));
+  const sc = F.map((_, j) => {
+    const [a, b] = d3.extent(R, r => r[j]); const p = (b - a) * 0.06;
+    return d3.scaleLinear([a - p, b + p], [pad, cs - pad]);
+  });
+  const svg = d3.select(el).append('svg').attr('width', W).attr('height', H);
+  const g = svg.append('g').attr('transform', `translate(${m.l + Math.max(0, (W - m.l - m.r - G) / 2)},${m.t})`);
+  const marks = [];
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    const cg = g.append('g').attr('transform', `translate(${j * cs},${i * cs})`);
+    cg.append('rect').attr('class', 'plot').attr('x', 1).attr('y', 1).attr('width', cs - 2).attr('height', cs - 2);
+    if (i === j) {
+      const [a, b] = d3.extent(R, r => r[j]);
+      const th = d3.range(1, 15).map(k => a + k * (b - a) / 15);
+      const bins = d3.bin().value(d => d.v).domain([a, b]).thresholds(th)(R.map((r, k) => ({ v: r[j], k })));
+      const yh = d3.scaleLinear([0, d3.max(bins, bn => bn.length)], [cs - pad, pad + 6]);
+      bins.forEach(bn => {
+        const ne = bn.filter(d => !isN[d.k]).length, nn = bn.length - ne;
+        const bx = sc[j](bn.x0), bw = Math.max(0.6, sc[j](bn.x1) - bx - 0.6);
+        if (ne) cg.append('rect').attr('class', 'hbar').attr('x', bx).attr('width', bw).attr('y', yh(ne)).attr('height', yh(0) - yh(ne));
+        if (nn) cg.append('rect').attr('class', 'hbar nuevo').attr('x', bx).attr('width', bw).attr('y', yh(ne + nn)).attr('height', yh(ne) - yh(ne + nn));
+      });
+      marks.push(cg.append('line').attr('class', 'diagmark').attr('y1', pad).attr('y2', cs - pad).attr('opacity', 0).datum(j));
+    } else {
+      cg.selectAll('circle').data(R.map((r, k) => ({ k, cx: sc[j](r[j]), cy: cs - sc[i](r[i]) }))).join('circle')
+        .attr('class', d => 'spt' + (isN[d.k] ? ' nuevo' : '')).attr('cx', d => d.cx).attr('cy', d => d.cy).attr('r', d => isN[d.k] ? 3.2 : 2.4);
+    }
+  }
+  g.selectAll('text.sl').data(F).join('text').attr('class', 'slab sl').attr('x', -8).attr('y', (_, i) => i * cs + cs / 2)
+    .attr('text-anchor', 'end').attr('dy', '0.32em').text(f => f);
+  g.selectAll('text.sb').data(F).join('text').attr('class', 'slab sb')
+    .attr('transform', (_, j) => `translate(${j * cs + cs / 2},${G + 10}) rotate(-35)`).attr('text-anchor', 'end').attr('dy', '0.32em').text(f => f);
+  const circles = g.selectAll('circle.spt');
+  let cur = null;
+  function hi(k) {
+    if (k === cur) return;
+    cur = k;
+    circles.classed('hi', d => d.k === k).classed('dim', d => k != null && d.k !== k);
+    if (k != null) circles.filter(d => d.k === k).raise();
+    marks.forEach(mk => {
+      const j = mk.datum();
+      if (k != null) mk.attr('x1', sc[j](R[k][j])).attr('x2', sc[j](R[k][j]));
+      mk.attr('opacity', k == null ? 0 : 1);
+    });
+    onHi(k);
+  }
+  g.append('rect').attr('width', G).attr('height', G).attr('fill', 'transparent')
+    .on('pointermove', e => {
+      const [mx, my] = d3.pointer(e);
+      const j = Math.floor(mx / cs), i = Math.floor(my / cs);
+      if (i < 0 || j < 0 || i >= n || j >= n || i === j) return hi(null);
+      const lx = mx - j * cs, ly = my - i * cs;
+      let best = null, bd = 12;
+      R.forEach((r, k) => { const dd = Math.hypot(sc[j](r[j]) - lx, cs - sc[i](r[i]) - ly); if (dd < bd) { bd = dd; best = k; } });
+      hi(best);
+    })
+    .on('pointerleave', () => hi(null));
+}
+
+// ---------- controles segmentados (también avanzan con las flechas) ----------
+const STEPS = new Map();
+function seg(sel, onChange) {
+  const root = $(sel);
+  const btns = [...root.querySelectorAll('button')];
+  let curV = null;
+  const set = (v, dur = DUR) => { curV = v; btns.forEach(b => b.classList.toggle('on', b.dataset.v === v)); onChange(v, dur); };
+  btns.forEach(b => b.addEventListener('click', () => { set(b.dataset.v); b.blur(); }));
+  return { set, values: btns.map(b => b.dataset.v), get: () => curV };
+}
+
+// ---------- contenido estático: código y fórmulas ----------
+document.querySelectorAll('pre.code[data-src]').forEach(pre => renderCode(pre, document.getElementById(pre.dataset.src).textContent));
+document.querySelectorAll('[data-tex]').forEach(el => katex.render(el.dataset.tex, el, { displayMode: el.hasAttribute('data-display'), throwOnError: false }));
+
+const slides = [...document.querySelectorAll('.slide')];
+slides.forEach((s, i) => {
+  const ft = document.createElement('div');
+  ft.className = 'foot';
+  ft.innerHTML = `<span>Implementación PCA · Grupo 2 · ECyT · UNSAM</span><span class="nav"><button aria-label="Anterior" data-d="-1">‹</button><span>${i + 1} / ${slides.length}</span><button aria-label="Siguiente" data-d="1">›</button></span>`;
+  ft.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { step(+b.dataset.d); b.blur(); }));
+  s.appendChild(ft);
+});
+
+// ---------- portada ----------
+safe('teaser', () => {
+  const bp = biplot($('#fig-teaser'), { noAxes: true, margin: { t: 4, r: 4, b: 4, l: 4 } });
+  bp.update({ pts: toPts(EU, D.own.scores), arrows: toArrows(D.own.V), labels: 'none' }, 0);
+});
+
+// ---------- actividad 2: pasos del algoritmo ----------
+safe('steps', () => {
+  const pre = $('#code-pca'), lis = [...document.querySelectorAll('#steps li')];
+  const lines = [...pre.querySelectorAll('.ln')];
+  let sticky = 0;
+  const show = k => {
+    pre.classList.toggle('focus', k > 0);
+    lis.forEach((li, i) => li.classList.toggle('on', i + 1 === k));
+    const [a, b = a] = k > 0 ? lis[k - 1].dataset.l.split('-').map(Number) : [-1, -1];
+    lines.forEach((ln, i) => ln.classList.toggle('on', i >= a && i <= b));
+  };
+  const ctl = { values: ['0', '1', '2', '3', '4', '5'], cur: '0', get() { return this.cur; }, set(v) { this.cur = v; sticky = +v; show(sticky); } };
+  lis.forEach((li, i) => {
+    li.addEventListener('pointerenter', () => show(i + 1));
+    li.addEventListener('pointerleave', () => show(sticky));
+    li.addEventListener('click', () => ctl.set(String(sticky === i + 1 ? 0 : i + 1)));
+  });
+  STEPS.set($('#s-impl'), ctl);
+});
+
+// ---------- actividad 3: datos ----------
+safe('head', () => {
+  const cols = ['Area', 'GDP', 'Inflation', 'Life.expect', 'Military', 'Pop.growth', 'Unemployment'];
+  const idx = cols.map(c => F.indexOf(c));
+  const rows = EU.slice(0, 5).map((c, i) => `<tr><td>${c}</td>${idx.map(j => `<td>${fN(D.europe.raw[i][j])}</td>`).join('')}</tr>`).join('');
+  $('#tbl-head').innerHTML = `<thead><tr><th>Country</th>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${rows}</tbody>`;
+});
+
+safe('var', () => varPanels($('#fig-var'), [{ key: 'propia', ratio: D.own.ratio }]));
+safe('heat', () => heatmap($('#fig-heat'), D.own.V));
+
+safe('biplot', () => {
+  const zmap = new Map(EU.map((c, i) => [c, D.europe.z[i]]));
+  const lg = $('#lg-color'), hint = $('#hint-biplot');
+  const bp = biplot($('#fig-biplot'), {
+    onFeature: f => {
+      if (f) {
+        const j = F.indexOf(f);
+        bp.colorBy(id => div(zmap.get(id)[j] / 2.5));
+        lg.innerHTML = `<b>${f}</b> (escalada): baja <span class="grad"></span> alta`;
+        lg.hidden = false; hint.hidden = true;
+      } else { bp.colorBy(null); lg.hidden = true; hint.hidden = false; }
+    },
+  });
+  bp.update({ pts: toPts(EU, D.own.scores), arrows: toArrows(D.own.V), labels: 'all' }, 0);
+});
+
+// ---------- actividad 3: sklearn ----------
+safe('skvar', () => {
+  varPanels($('#fig-skvar'), [{ key: 'propia', ratio: D.own.ratio, cls: 'bar' }, { key: 'sklearn', ratio: D.sk.ratio, cls: 'bar amb' }]);
+  $('#chips').innerHTML = D.sk.signs.map((s, i) =>
+    `<span class="chip${s < 0 ? ' flip' : ''}">Comp. ${i + 1} ${s < 0 ? 'invertida' : 'igual'}</span>`).join('');
+});
+
+safe('skbi', () => {
+  const bp = biplot($('#fig-sk'));
+  const dom = { x: [-5.2, 4.3], y: [-4, 4] };
+  const S = {
+    propia: { pts: toPts(EU, D.own.scores), arrows: toArrows(D.own.V), labels: 'all', dom },
+    sklearn: { pts: toPts(EU, D.sk.scores), arrows: toArrows(D.sk.V), labels: 'all', dom },
+  };
+  const sg = seg('#seg-sk', (v, dur) => bp.update(S[v], dur));
+  sg.set('propia', 0);
+  STEPS.set($('#s-skbi'), sg);
+});
+
+// ---------- actividad 4 ----------
+safe('ar', () => {
+  const bp = biplot($('#fig-ar'));
+  bp.update({ pts: toPts(D.exp.countries, D.exp.scores), arrows: toArrows(D.exp.V), labels: 'all' }, 0);
+});
+
+const projPts = toPts(EU, D.sk.scores).concat(toPts(D.nuevos.countries, D.nuevos.scores));
+safe('proy', () => {
+  const bp = biplot($('#fig-proy'));
+  const S = {
+    completa: { pts: projPts, arrows: toArrows(D.sk.V), labels: 'nuevos', featLabels: false },
+    zoom: { pts: projPts, arrows: toArrows(D.sk.V), labels: 'all', dom: { x: [-10.6, 5.6], y: [-14, 4.6] } },
+  };
+  const sg = seg('#seg-proy', (v, dur) => bp.update(S[v], dur));
+  sg.set('completa', 0);
+  STEPS.set($('#s-proy'), sg);
+  const cols = ['Area', 'GDP', 'Inflation', 'Life.expect', 'Military', 'Pop.growth', 'Unemployment'];
+  const head = `<tr><th>df_nuevos</th>${D.nuevos.countries.map(c => `<th>${c.replace('_', '<br>')}</th>`).join('')}</tr>`;
+  const body = cols.map(c => { const j = F.indexOf(c); return `<tr><td>${c}</td>${D.nuevos.raw.map(r => `<td>${fN(r[j])}</td>`).join('')}</tr>`; }).join('');
+  $('#tbl-nuevos').innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;
+});
+
+safe('lado', () => {
+  const m = { l: 36, b: 32 };
+  const L = biplot($('#fig-l'), { margin: m });
+  const R = biplot($('#fig-r'), { margin: m });
+  L.update({ pts: projPts, arrows: toArrows(D.sk.V), labels: 'nuevos', featLabels: false }, 0);
+  R.update({ pts: toPts(D.all.countries, D.all.scores), arrows: toArrows(D.all.V), labels: 'nuevos' }, 0);
+});
+
+safe('splom', () => {
+  const info = $('#splom-info');
+  const names = D.all.countries, R = D.all.raw;
+  const show = k => {
+    if (k == null) { info.innerHTML = '<p class="note-sm hint">Pasá el mouse por un punto: el país se resalta en todos los paneles.</p>'; return; }
+    info.innerHTML = `<div class="pname${NUEVOS.has(names[k]) ? ' nuevo' : ''}">${names[k]}</div><table>${F.map((f, j) => `<tr><td>${f}</td><td>${fN(R[k][j])}</td></tr>`).join('')}</table>`;
+  };
+  show(null);
+  splom($('#fig-splom'), show);
+});
+
+// ---------- navegación ----------
+const prog = $('#progress');
+let cur = 0;
+function go(i, dir = 0) {
+  i = clamp(i, 0, slides.length - 1);
+  slides[cur].classList.remove('active');
+  cur = i;
+  slides[cur].classList.add('active');
+  const st = STEPS.get(slides[cur]);
+  if (st && dir) st.set(dir > 0 ? st.values[0] : st.values[st.values.length - 1], 0);
+  try { history.replaceState(null, '', '#' + (cur + 1)); } catch (e) { /* file:// en algunos navegadores */ }
+  prog.style.width = ((cur + 1) / slides.length) * 100 + '%';
+}
+function step(dir) {
+  const st = STEPS.get(slides[cur]);
+  if (st) {
+    const k = st.values.indexOf(st.get()) + dir;
+    if (k >= 0 && k < st.values.length) { st.set(st.values[k]); return; }
+  }
+  if (cur + dir >= 0 && cur + dir < slides.length) go(cur + dir, dir);
+}
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ') { e.preventDefault(); step(1); }
+  else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') { e.preventDefault(); step(-1); }
+  else if (k === 'Home') go(0);
+  else if (k === 'End') go(slides.length - 1);
+  else if (k === 'f' && document.documentElement.requestFullscreen) {
+    if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen();
+  }
+});
+let tx = null;
+addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
+addEventListener('touchend', e => {
+  if (tx == null) return;
+  const dx = e.changedTouches[0].clientX - tx;
+  if (Math.abs(dx) > 60) step(dx < 0 ? 1 : -1);
+  tx = null;
+});
+function fit() { document.documentElement.style.setProperty('--s', Math.min(innerWidth / 1280, innerHeight / 720)); }
+addEventListener('resize', fit);
+fit();
+const h = parseInt(location.hash.slice(1), 10);
+go(Number.isFinite(h) ? h - 1 : 0);
+})();
+
+</script>
+</body>
+</html>
